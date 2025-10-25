@@ -1,0 +1,24 @@
+TAG Data
+
+This folder contains all triacylglyceride (TAG) assay data used to quantify whole-fly lipid content across genotypes, diets, and treatment conditions. The data come from multiple runs conducted over the course of the experiment to assess reproducibility and consistency in lipid quantification.
+
+Folder structure
+Cohort - 1
+WEEK 1 TAG RUNS – initial TAG assay datasets from the first major experimental run.
+WEEK 3 TAG – final experimental run after three weeks of diet conditioning.
+
+Cohort - 2 
+RUNS 08092025 – validation run performed to confirm the reproducibility of Week 1 results.
+
+
+Each folder includes both raw plate readings and cleaned data. Raw data files contain absorbance values exported directly from the plate reader, while cleaned datasets are processed and combined in Excel before being imported into R for statistical analysis.
+
+Data processing notes
+
+Negative concentration values indicate empty or invalid wells; when log-transformed, these become NaN and are automatically excluded.
+
+TAG and protein concentrations were first calculated in Excel, followed by computation of the TAG/protein ratio for each sample.
+
+Combined and cleaned datasets (usually stored in the Combined Data subfolder) are structured consistently across runs, making downstream analysis straightforward.
+
+Linear models and statistical comparisons were performed in R after parsing the cleaned data.
