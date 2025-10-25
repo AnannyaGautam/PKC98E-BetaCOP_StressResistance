@@ -1,0 +1,378 @@
+---
+title: "BATCHES"
+author: '510193463'
+date: "2025-06-27"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+WEEK3.07.77 <- read.csv("D:/TAG ASSAY/WEEK 3 TAG/WEEK 3 77 RESULTS/WEEK3.07.77 - Copy.csv")
+
+w3_PKC <- WEEK3.07.77 %>% 
+  separate(
+    Sample,
+    into  = c("Batch_raw", "GC", "Vial"),   
+    sep   = "\\.",
+    remove = FALSE                  
+  ) %>% 
+  mutate(
+    Batch     = as.integer(str_extract(Batch_raw, "\\d+")),
+    Genotype  = str_extract(GC, "^\\d{2}"),
+    Condition = str_extract(GC, "[A-D]"),
+    Vial      = as.integer(Vial),
+    logTP     = log(`T.P`)
+  ) %>% 
+  relocate(Batch, .after = Batch_raw)       
+w3_PKC <- w3_PKC%>% 
+  filter(!is.na(`T.P`)) %>% 
+  filter(!is.na(logTP)) %>% 
+  filter(!is.na(Conc.T))
+#w3_PKC %>% select(Genotype, Condition, Vial, `T.P`, logTP,Conc.T, Batch, Conc.P) %>% head()
+w3_PKC <- w3_PKC %>%
+  select(Genotype, Condition, Vial, `T.P`, logTP, Conc.T, Batch, Conc.P) %>% 
+  mutate(Diet = case_when(Condition == "A" ~ "5% Sugar",
+                          Condition == "B" ~ "5% Sugar",
+                          T ~ "20% Sugar")) %>%
+  mutate(Drug = case_when(Condition == "A" ~ "50uM RU486",
+                          Condition == "C" ~ "50uM RU486",
+                          T ~ "200uM RU486")) %>%
+  mutate_at(vars(Diet), factor, level = c("5% Sugar", "20% Sugar")) %>%
+  mutate_at(vars(Drug), factor, level = c("50uM RU486", "200uM RU486"))
+library(dplyr)
+
+w3_PKC <- w3_PKC %>% 
+  mutate(
+    Genotype = dplyr::recode(Genotype,
+                              "07" = "Control",
+                              "77" = "PKCe")
+  )
+
+ggplot(w3_PKC, aes(x = Diet, y = logTP,
+                   colour = Genotype, shape = Genotype)) +
+  geom_boxplot(outlier.shape = NA,
+               alpha = 0.4, width = 0.6,
+               position = position_dodge(width = 0.8)) +
+  geom_jitter(position = position_jitterdodge(
+                dodge.width = 0.8, jitter.width = 0.15),
+              size = 2.5, alpha = 0.7) +
+  facet_grid(. ~ Drug) +
+  scale_colour_manual(values = c("Control" = "black",
+                                 "PKCe"   = "#E41A1C")) +
+  labs(
+    x = "Diet (% sucrose w/v)",
+    y = expression(log[ e ] ~ "(TAG / Protein)"),
+    colour = "Genotype", shape = "Genotype"
+  ) +
+  theme_classic(base_size = 14) +
+  theme(
+    axis.title = element_text(size = 14),
+    axis.text  = element_text(size = 12),
+    strip.text = element_text(size = 13, face = "bold"),
+    legend.position = "top",
+    legend.title = element_text(face = "bold"),
+    panel.border = element_rect(colour = "black", fill = NA, size = 0.8)
+  )
+
+
+
+```
+
+```{r}
+
+pkc_all <- read.csv("D:/TAG ASSAY/WEEK 3 TAG/pkc_all.csv")
+
+pkc_all <- pkc_all %>%
+  mutate(
+    Genotype = fct_recode(
+      Genotype,
+      "Control (w1118 EV)" = "Control",
+      "PKC98E RNAi"        = "PKCe"
+    ),
+    Genotype = fct_relevel(Genotype, "Control (w1118 EV)", "PKC98E RNAi")
+  ) %>% 
+  mutate(Diet = factor(Diet, levels = c("5% Sugar", "20% Sugar"))) %>%
+  mutate(Drug = factor(Drug, levels = c("50uM RU486", "200uM RU486")))
+
+pkc_all$Batch <- as.factor(pkc_all$Batch)
+
+
+ggplot(pkc_w1,
+       aes(x = Genotype, y = Conc.T,
+           colour = Diet, fill = Diet, shape = Genotype)) +
+  geom_boxplot(
+    aes(group = interaction(Genotype, Diet)),
+    outlier.shape = NA, alpha = 0.25, width = 0.6,
+    position = position_dodge2(width = 0.8, preserve = "single")
+  ) +
+  geom_point(
+    position = position_jitterdodge(dodge.width = 0.8, jitter.width = 0.15),
+    size = 2.2, alpha = 0.8
+  ) +
+  facet_grid(~Drug) +
+  scale_colour_manual(values = c("5% Sugar"="#1b9e77","20% Sugar"="#d95f02")) +
+  scale_fill_manual(values   = c("5% Sugar"="#1b9e77","20% Sugar"="#d95f02")) +
+  labs(x="Genotype", y=expression(log[e]~"(TAG / Protein)")) +
+  theme_classic(base_size=14) +
+  theme(strip.text = element_text(size=12, face="bold"),
+        legend.position="top",
+        legend.title = element_text(face="bold"),
+        panel.border = element_rect(colour="black", fill=NA, linewidth=0.6))
+
+
+
+library(lme4)
+
+m_pkc <- lm(logTP ~ Genotype*Drug*Diet*Week, data = pkc_all)
+
+summary(m_pkc)
+```
+
+
+```{r}
+# Packages
+library(broom)
+library(dplyr)
+library(stringr)
+library(gt)
+
+tid_main <- tidy(m_pkc) %>%
+  filter(term != "(Intercept)")  %>%# add significance symbols
+  mutate(sig = case_when(
+    p.value < 0.001 ~ "***",
+    p.value < 0.01  ~ "**",
+    p.value < 0.05  ~ "*",
+    p.value <= 0.10 ~ ".",
+    p.value >= 0.10 ~ "ns"
+  ))
+
+pretty_term <- function(x) {
+  x %>%
+    str_replace_all("^WeekWeek 3", "Week (3 vs 1)") %>%
+    str_replace_all("^Diet20% Sugar", "Diet (20% vs 5%)") %>%
+    str_replace_all("^Drug200uM RU486", "RU486 (200 µM vs 50 µM)") %>%
+    str_replace_all("^GenotypePKC98E RNAi", "Genotype (PKC98E RNAi vs Control)") %>%
+    str_replace_all(":", " × ")
+}
+
+tab_df <- tid_main %>%
+  transmute(
+    Predictor = pretty_term(term),
+    Estimate  = estimate,
+    `Std. Error` = std.error,
+    `t value` = statistic,
+    `p-value` = p.value,
+    Sig = sig
+  ) %>%
+  arrange(`p-value`)
+
+gl <- glance(m_pkc)
+subtitle_txt <- sprintf(
+  "lm(logTAG/Protein) on Genotype × RU486 × Diet × Week; n = %s; R²(adj) = %.3f; Residual SE = %.3f",
+  gl$nobs, gl$adj.r.squared, gl$sigma
+)
+
+tab_main <- tab_df %>%
+  gt() %>%
+  tab_header(
+    title = md("**Full Model Summary for log(TAG/Protein) for PKC98E**"),
+    subtitle = subtitle_txt
+  ) %>%
+  fmt_number(columns = c(Estimate, `Std. Error`, `t value`), decimals = 2) %>%
+  fmt_number(columns = `p-value`, decimals = 3) %>%
+  cols_label(
+    Predictor = "Predictor",
+    Estimate = "Estimate",
+    `Std. Error` = "SE",
+    `t value` = "t",
+    `p-value` = "p",
+    Sig = "Sig"
+  ) %>%
+  tab_spanner(label = "Model Coefficients", columns = c(Estimate, `Std. Error`, `t value`, `p-value`)) %>%
+  tab_footnote(
+    footnote = "Significance codes: *** p<0.001; ** p<0.01; * p<0.05; . p≤0.10.",
+    locations = cells_column_labels(columns = Sig)
+  ) %>%
+  opt_table_outline() %>%
+  tab_options(data_row.padding = px(6))
+
+tab_main
+
+gtsave(tab_main, "Table2_logTAG_PKCe_full_model.png", expand = 5)
+
+```
+
+
+
+```{r}
+summary_df <- pkc_all %>%
+  group_by(Week, Drug, Diet, Genotype) %>%
+  summarise(mean = mean(logTP), se = sd(logTP)/sqrt(n()), .groups="drop")
+
+ggplot(summary_df, aes(Diet, mean, fill = Genotype)) +
+  geom_col(position = position_dodge(0.7), width = 0.6, colour="black") +
+  geom_errorbar(aes(ymin = mean - se, ymax = mean + se),
+                width = 0.2, position = position_dodge(0.7)) +
+  facet_grid(Week ~ Drug) +
+  scale_fill_manual(values = c("Control"="grey30","PKCe"="#E41A1C")) +
+  labs(x = "Diet (% sucrose w/v)", y = expression(log[e]~"(TAG / Protein)")) +
+  theme_classic(base_size = 13) +
+  theme(legend.position = "top")
+
+```
+#subsets
+
+```{r}
+
+w3_PKC %>%
+  filter(Drug == 50) %>%
+  ggplot(aes(x = Diet,
+             y = logTP,
+             colour = Genotype)) +
+  geom_boxplot(outlier.shape = NA,
+               alpha = 0.3,
+               position = position_dodge(width = 0.8)) +
+  geom_point(position = position_jitterdodge(dodge.width = 0.8,
+                                             jitter.width = 0.15),
+             size = 2) +
+  scale_colour_manual(values = c("Control" = "grey40",
+                                 "PKCe" = "firebrick")) +
+  labs(title  = "log(TAG / Protein) — 50 µM Drug WEEK 1",
+       x      = "Sucrose in diet (% w/V)",
+       y      = "log(TAG / Protein)",
+       colour = "Genotype") +
+  theme_classic(base_size = 13)
+
+w3_PKC %>%
+  filter(Drug == 200) %>%
+  ggplot(aes(x = Diet,
+             y = logTP,
+             colour = Genotype)) +
+  geom_boxplot(outlier.shape = NA,
+               alpha = 0.3,
+               position = position_dodge(width = 0.8)) +
+  geom_point(position = position_jitterdodge(dodge.width = 0.8,
+                                             jitter.width = 0.15),
+             size = 2) +
+  scale_colour_manual(values = c("Control" = "grey40",
+                                 "PKCe" = "firebrick")) +
+  labs(title  = "log(TAG / Protein) — 200 µM Drug WEEK 3 ",
+       x      = "Sucrose in diet (% w/V)",
+       y      = "log(TAG / Protein)",
+       colour = "Genotype") +
+  theme_classic(base_size = 13)
+
+
+
+
+w3_PKC_200 <- w3_PKC %>%
+  filter(Drug == 200)
+
+m0_w3_PKC_200 <- lm(logTP ~ Genotype *Diet, data = w3_PKC_200)
+
+m1_w3_PKC_200 <- lmer(logTP ~ Genotype *Diet + (1|Batch), data = w3_PKC_200)
+
+library(car)
+
+Anova(m0_w3_PKC_200)
+
+AIC(m0_w3_PKC_200, m1_w3_PKC_200)
+```
+
+
+#Model Selections
+```{r}
+
+library(lme4)
+
+# Full 3-way interaction model
+m0_w3_PKC <- lmer(logTP ~ Genotype * Drug * Diet + (1 | Batch), data = w3_PKC)
+
+# All 2-way interactions, no 3-way
+m1_w3_PKC <- lmer(logTP ~ Genotype + Drug + Diet +
+                  Genotype:Drug + Genotype:Diet + Drug:Diet +
+                  (1 | Batch), data = w3_PKC)
+
+# Genotype:Drug and Genotype:Diet only
+m2_w3_PKC <- lmer(logTP ~ Genotype + Drug + Diet +
+                  Genotype:Drug + Genotype:Diet +
+                  (1 | Batch), data = w3_PKC)
+
+# Genotype:Drug only
+m3_w3_PKC <- lmer(logTP ~ Genotype + Drug + Diet +
+                  Genotype:Drug +
+                  (1 | Batch), data = w3_PKC)
+
+# Main effects only
+m4_w3_PKC <- lmer(logTP ~ Genotype + Drug + Diet + (1 | Batch), data = w3_PKC)
+
+# Genotype:Diet only
+m5_w3_PKC <- lmer(logTP ~ Genotype + Drug + Diet +
+                  Genotype:Diet +
+                  (1 | Batch), data = w3_PKC)
+
+# Drug:Diet only
+m6_w3_PKC <- lmer(logTP ~ Genotype + Drug + Diet +
+                  Drug:Diet +
+                  (1 | Batch), data = w3_PKC)
+
+# Genotype:Drug and Drug:Diet
+m7_w3_PKC <- lmer(logTP ~ Genotype + Drug + Diet +
+                  Genotype:Drug + Drug:Diet +
+                  (1 | Batch), data = w3_PKC)
+
+# Genotype:Diet and Drug:Diet
+m8_w3_PKC <- lmer(logTP ~ Genotype + Drug + Diet +
+                  Genotype:Diet + Drug:Diet +
+                  (1 | Batch), data = w3_PKC)
+
+models_w3_PKC <- list(
+  m0 = m0_w3_PKC, m1 = m1_w3_PKC, m2 = m2_w3_PKC, m3 = m3_w3_PKC,
+  m4 = m4_w3_PKC, m5 = m5_w3_PKC, m6 = m6_w3_PKC, m7 = m7_w3_PKC, m8 = m8_w3_PKC
+)
+
+aic_values_w3_PKC <- sapply(models_w3_PKC, AIC)
+aic_df_w3_PKC <- data.frame(Model = names(aic_values_w3_PKC), AIC = aic_values_w3_PKC)
+aic_df_w3_PKC <- aic_df_w3_PKC[order(aic_df_w3_PKC$AIC), ]
+
+print(aic_df_w3_PKC)
+
+```
+
+
+```{r}
+library(car)
+Anova(m4_w3_PKC, type = 2)
+summary(m4_w3_PKC)
+
+
+```
+
+```{r}
+library(emmeans)
+emmeans_m4_w3_PKC <- emmeans(m4_w3_PKC, ~ Genotype * Drug * Diet)
+emmeans_m4_w3_PKC_summary <- summary(emmeans_m4_w3_PKC)
+emmeans_m4_w3_PKC_summary <- as.data.frame(emmeans_m4_w3_PKC_summary)
+emmeans_m4_w3_PKC_summary <- emmeans_m4_w3_PKC_summary %>%
+  mutate(
+    Genotype = factor(Genotype, levels = c("Control", "PKCe")),
+    Drug = factor(Drug, levels = c("50", "200")),
+    Diet = factor(Diet, levels = c("5", "20"))
+  )
+ggplot(emmeans_m4_w3_PKC_summary, aes(x = Diet, y = emmean, color = Genotype)) +
+  geom_point(position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL),
+                width = 0.2,
+                position = position_dodge(width = 0.5)) +
+  facet_wrap(~ Drug) +
+  labs(title = "Estimated Marginal Means of log(TAG / Protein) by Genotype, Drug, and Diet",
+       x = "Sucrose in diet (% w/V)",
+       y = "Estimated Marginal Mean of log(TAG / Protein)",
+       color = "Genotype") +
+  theme_classic(base_size = 13)
+  
+```
+
+
+
+
