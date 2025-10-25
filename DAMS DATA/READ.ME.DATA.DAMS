@@ -1,0 +1,27 @@
+This directory contains all datasets generated from the Drosophila Activity Monitoring System (DAMS) across both pilot and main stress-resistance experiments. The data were collected during starvation and paraquat-induced oxidative stress assays conducted on Drosophila melanogaster using the TriKinetics monitoring platform.
+
+Each subfolder corresponds to a specific experimental batch or condition (e.g., pilot runs, diet optimisations, final assays).
+
+Folder structure
+
+/Pilot_Experiments/ – early runs used for assay optimisation (e.g., paraquat dose, agar concentration).
+
+/Main_Experiments/ – final datasets used in the thesis analysis.
+
+/Output/ – contains raw and parsed data exported from the DAMS File Scan software.
+
+Data format
+
+Within each Output folder:
+
+Files ending with .txt represent monitor-level activity data, where each column corresponds to an individual fly channel.
+
+Activity is binned in 5-minute intervals (each row = 5 min), summing all beam breaks per interval.
+
+Notes
+
+Data are unfiltered exports from the DAMS software; no cleaning or modelling is applied here.
+
+Parsed versions of these files (trimmed to active windows and annotated with genotype and diet) are stored in the respective Analysis subfolders.
+
+The same analysis scripts can be used to read and process all datasets, as they share an identical format and binning scheme.
