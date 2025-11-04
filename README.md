@@ -2,11 +2,9 @@
 This repository contains data and R code for my Honours thesis on how PKC98E and β′COP influence lipid metabolism, stress resistance, and ageing in Drosophila melanogaster. Experiments combine RNAi knockdowns with diet conditioning (5% vs 20% sucrose), survival and activity assays, fecundity counts, food intake, TAG quantification, and qPCR validation.
 
 ## Where are the R scripts?
-Each major data section contains its own analysis script(s). Open the script within that section to reproduce cleaning, models, and figures for that dataset.
+Each major data section contains its own analysis script. Open the script within that section to reproduce cleaning, models, and figures for that dataset.
 
-Genotype coding (LAB-ID)
-
-Raw files use LAB-ID for Genotype. Scripts map these to readable labels during analysis.
+Raw files use LAB-ID for Genotype. some Scripts map these to readable labels during analysis.
 
 pkgs <- c("tidyverse","survival","coxme","emmeans","lme4","readr")
 install.packages(setdiff(pkgs, rownames(installed.packages())))
