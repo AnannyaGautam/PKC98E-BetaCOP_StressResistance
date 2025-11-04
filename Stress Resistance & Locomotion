@@ -1,5 +1,92 @@
 This folder contains processed datasets from the Drosophila Activity Monitoring System (DAMS) used to assess stress resistance under starvation and paraquat-induced oxidative stress. Each file represents individual fly-level survival data recorded as time-to-death (hours) and corresponding metadata (genotype, diet, monitor ID, and replicate).
 
+#We first created a script to create a list for Randomisation in DAMS for each monitor, to exclude any row or column effects per monitor caused. 
+
+library(tidyverse)      
+set.seed(46)             # reproducible 
+
+# Layout constants
+n_monitors            <- 15
+rows_per_monitor      <- 4
+cols_per_row          <- 8
+rows_lab              <- LETTERS[1:rows_per_monitor]            # A, B, C, D
+cols_lab              <- paste0("Col", 8:1)                     # flipped: Col8 … Col1
+wells_per_monitor     <- rows_per_monitor * cols_per_row        # 32
+
+reps_per_cond_per_mon <- 3
+n_blanks_per_monitor  <- wells_per_monitor - (10 * reps_per_cond_per_mon)  # 2
+stopifnot(n_blanks_per_monitor >= 0)
+
+# 10 conditions = 5 genotypes x 2 diets
+conditions <- tribble(
+  ~ConditionID, ~Genotype, ~Diet,
+  1, "1008", "5",
+  2, "1008", "20",
+  3, "1007", "5",
+  4, "1007", "20",
+  5, "1477", "5",
+  6, "1477", "20",
+  7, "1491", "5",
+  8, "1491", "20",
+  9, "7791", "5",
+ 10, "7791", "20"
+) %>%
+  mutate(Condition = str_glue("G{Genotype}_D{Diet}"))  # compact human label
+
+# For each condition, assign exactly one vial (1..5) to each monitor, with balance:
+# Each vial is used on exactly 3 monitors (15 monitors / 5 vials = 3 each).
+vial_assignments <- map_dfr(conditions$ConditionID, function(cid) {
+  tibble(
+    ConditionID = cid,
+    Monitor     = 1:n_monitors,
+    VialID      = sample(rep(6:10, each = n_monitors / 5))  # 1..5 each exactly 3 times, shuffled
+  )
+})
+
+make_monitor_wells <- function(m_idx) {
+  # For this monitor: get vial choice for each condition
+  va_m <- vial_assignments %>% filter(Monitor == m_idx)
+samples <- conditions %>%
+  left_join(va_m, by = "ConditionID") %>%
+  arrange(ConditionID) %>%
+  tidyr::uncount(weights = reps_per_cond_per_mon, .remove = FALSE) %>%
+  group_by(ConditionID, Genotype, Diet, VialID) %>%
+  mutate(Rep = row_number()) %>%
+  ungroup() %>%
+  mutate(
+    SampleLabel = paste0("G", Genotype, "_D", Diet, "_V", VialID)
+  ) %>%
+  select(ConditionID, Genotype, Diet, VialID, Rep, SampleLabel, Condition)
+
+blanks <- tibble(
+  ConditionID = rep(NA_integer_, n_blanks_per_monitor),
+  Genotype    = rep(NA_character_, n_blanks_per_monitor),
+  Diet        = rep(NA_character_, n_blanks_per_monitor),
+  VialID      = rep(NA_integer_, n_blanks_per_monitor),
+  Rep         = rep(NA_integer_, n_blanks_per_monitor),
+  SampleLabel = paste0("Blank", seq_len(n_blanks_per_monitor)),
+  Condition   = rep("Blank", n_blanks_per_monitor)
+)
+  entries <- bind_rows(samples, blanks) %>% slice_sample(prop = 1)
+  wells <- expand_grid(Row = rows_lab, Column = cols_lab) %>%
+    mutate(Monitor = m_idx) %>%
+    bind_cols(entries) %>%
+    relocate(Monitor, Row, Column)
+
+  wells
+}
+
+wells_all <- map_dfr(1:n_monitors, make_monitor_wells)
+
+# Wide grid with one row per (Monitor, Row A–D), cols Col8..Col1 filled with SampleLabel
+grid_view <- wells_all %>%
+  select(Monitor, Row, Column, SampleLabel) %>%
+  pivot_wider(names_from = Column, values_from = SampleLabel) %>%
+  arrange(Monitor, Row)
+
+write_csv(grid_view, "DAM_grid_by_monitor.csv")
+
+
 #master script to read the files and parse the data
 ```{r}
 
@@ -479,4 +566,48 @@ coxme_fit_dKD_20 <- coxme(Surv(time_hr, event) ~ Genotype  + (1|Monitor),
 
 ```
 
+# We also did Geno-Diet specific Locomotor Activity Data Analysis. 
+# For starvation we choose LANDMARK_H <- 48 (as this has 2 x 12:12hours Light and Dark Cycle) 
+# For Paraquat we choose to do a Landmark Analysis, we decided on time when >95% of the Individuals were alive 
+
+# To select a Landmark Time for PQ 
+ km_all  <- survfit(Surv(time_hr, event) ~ 1, data = per_fly)
+ S_all   <- data.frame(time = km_all$time, surv = km_all$surv)
+ t_95_all <- suppressWarnings(min(S_all$time[S_all$surv < 0.95], na.rm = TRUE))
  
+ LANDMARK_H <- floor(t_95_all)
+act_src <- activity_long %>%
+  # time per bin is already "time_hr"
+  rename(time_bin_hr = time_hr) %>%
+  # parse "G####_D##_V#" into columns
+  extract(condition, into = c("Genotype","Diet","Vial"),
+          regex = "G(\\d+)_D(\\d+)_V(\\d+)", remove = FALSE, convert = TRUE) %>%
+  mutate(
+    Monitor  = as.integer(Monitor),
+    Channel  = as.integer(Channel),
+    Genotype = as.character(Genotype),
+    Diet     = as.integer(Diet),
+    Vial     = as.integer(Vial)
+  ) %>%
+  arrange(Monitor, Channel, time_bin_hr) %>%
+  group_by(Monitor, Channel) %>%
+  # robust dt: use forward difference in time; fallback to global median step if needed
+  mutate(dt_hr = lead(time_bin_hr) - time_bin_hr) %>%
+  ungroup()
+
+
+early <- act_src %>%
+  dplyr::filter(time_bin_hr <= LANDMARK_H) %>%
+  dplyr::mutate(dt_hr = bin_minutes/60) %>%
+  dplyr::group_by(Monitor, Channel, Genotype, Diet) %>%
+  dplyr::summarise(
+    AUC_early  = sum(activity * dt_hr, na.rm = TRUE),
+    rate_early = AUC_early / LANDMARK_H,
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(Diet_f = factor(Diet, levels = c(5,20), labels = c("5%","20%")))
+
+# Now the early, contains the acitivity of the specific LANDMARK_H defined. 
+#Now you can subset the data for your own specifc genos and analysis is done by lmer and estimates are calculated with emmeans 
+
+
