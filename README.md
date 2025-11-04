@@ -8,13 +8,6 @@ Genotype coding (LAB-ID)
 
 Raw files use LAB-ID for Genotype. Scripts map these to readable labels during analysis.
 
-LAB-ID/Genotype/Notes
-1007/ Control (w1118 EV)/ KK library control
-1008/ Control (w1118)/ GD library control
-1477/	PKC98E RNAi/	VDRC KK
-1491/	β′COP RNAi/	VDRC GD
-7791/	(double KD)	Double knockdown
-
 pkgs <- c("tidyverse","survival","coxme","emmeans","lme4","readr")
 install.packages(setdiff(pkgs, rownames(installed.packages())))
 
