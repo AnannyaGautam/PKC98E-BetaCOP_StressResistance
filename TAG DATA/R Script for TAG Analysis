@@ -1,0 +1,33 @@
+# Data
+tag <- read.csv("TAG.08092025.csv") %>%
+  filter(!is.na(T.P)) %>%
+  mutate(
+    Genotype_chr = as.character(Genotype),
+    log.TP = log(T.P)
+  )
+
+# Labels
+geno_labs <- c(
+  "1007" = "Control (w1118 EV)",
+  "1477" = "PKC98E RNAi",
+  "1008" = "Control (w1118)",
+  "1491" = "β'COP RNAi",
+  "7791" = "PKC98E RNAi/β'COP RNAi"
+)
+
+tag <- tag %>%
+  mutate(
+    GenotypeLab = recode(Genotype_chr, !!!geno_labs),
+    Diet = factor(Diet, levels = c(5, 20), labels = c("5% sugar", "20% sugar"))
+  )
+
+#Below is how all the subsequent pairs were made and analysed. 
+
+tag_pkc <- tag %>% 
+  filter(Genotype %in% c(1477,1007)) %>%
+  mutate(Genotype = factor(as.character(Genotype), levels = c("1007","1477"))) %>%
+  mutate(Diet = factor(as.factor(Diet), levels = c("5% sugar","20% sugar")))
+
+
+pkc_model <- lm(log.TP ~ GenotypeLab*Diet, data = tag_pkc)
+summary(pkc_model)
