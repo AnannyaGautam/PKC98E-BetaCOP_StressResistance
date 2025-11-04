@@ -1,0 +1,64 @@
+Egg_Counts <- read_excel("D:/Egg counts/egg counts whole body kd/Egg Counts.xlsx")
+ec <- Egg_Counts %>%
+  dplyr::rename(
+    Assay     = `Before which Assay - starvation, PCR, and TAG  - SA. Before PQ - PA`,
+    diet_raw  = Diet,
+    n_flies   = `No. of flies`,
+    n_eggs    = `No .of eggs`
+  ) %>%
+  mutate(
+    diet_pct  = as.integer(str_extract(diet_raw, "\\d+")),         # 5, 20, etc.
+    diet_lab  = factor(paste0(diet_pct, "%"), levels = c("5%", "20%")),
+    eggs_per_fly = n_eggs / n_flies
+  ) %>%
+  filter(!is.na(eggs_per_fly), is.finite(eggs_per_fly))
+
+ec <- ec %>%
+  group_by(Genotype, diet_lab) %>%
+  mutate(Vial_ID = row_number()) %>%
+  ungroup()
+
+
+# just like below we subsetted the data for all the other Genotypes and analysed the same way 
+ec_PKC <-  ec %>%
+  filter(Genotype %in% c(1007, 1477)) %>%
+  mutate(
+    Genotype = factor(as.character(Genotype), levels = c("1007","1477")),
+    Diet_f   = factor(diet_pct, levels = c(5, 20), labels = c("5%", "20%")))
+
+library(lme4)
+m_pkc <- lmer(eggs_per_fly ~ GenotypeLab*Diet_f + (1|Vial_ID), data = ec_PKC)
+
+
+library(car)
+summary(m_pkc)
+Anova(m_pkc, type = "II")
+
+
+# Plots were made just like below 
+diet_cols <- c("5%" = "#1b9e77", "20%" = "#d95f02")
+
+
+
+ylim_top <- max(c(nlab$y_pos, tt_pkc$y.position), na.rm = TRUE) * 1.05
+
+plot_A <- ggplot(ec_PKC, aes(x = GenotypeLab, y = eggs_per_fly)) +
+  geom_boxplot(aes(fill = Diet_f, color = Diet_f),
+               outlier.shape = NA, width = 0.6, linewidth = 1.2, alpha = 0.35) +
+  geom_jitter(aes(color = Diet_f), width = 0.12, alpha = 0.65, size = 1.9) +
+  stat_summary(fun = median, geom = "point", size = 3, color = "black") +
+  facet_wrap(~ Diet_f, nrow = 1) +
+  scale_fill_manual(values = diet_cols, guide = "none") +
+  scale_color_manual(values = diet_cols, guide = "none") +
+  labs(
+    title = "Control (w1118 EV) vs PKC98E RNAi",
+    x = NULL, y = "eggs/fly/24h") +
+  coord_cartesian(ylim = c(0, ylim_top)) +
+  theme_classic(base_size = 18) +
+  theme(
+    panel.spacing = unit(1, "lines"),
+    axis.line = element_line(linewidth = 1.2),
+    axis.ticks = element_line(linewidth = 1.1),
+    legend.position = "none",
+    plot.caption = element_text(size = 11, color = "grey25", margin = margin(t = 6))
+  )
