@@ -1,0 +1,58 @@
+qPCR <- read.csv("Combined qPCR.csv")
+
+parsed <- qPCR %>%
+  mutate(
+    Sample = str_extract(REPLICATE, "^\\d+"),
+    # Strip the leading digits, then take the first char (C/R)
+    Group  = str_extract(str_remove(REPLICATE, "^\\d+"), "^[CR]") |>
+               recode(C = "Control", R = "Treatment"),
+    BioRep = str_extract(REPLICATE, "[a-z]$")  # a, b, c, ...
+  )
+
+#Average technical replicates per REPLICATE × Gene 
+
+tech_mean <- parsed %>%
+  group_by(REPLICATE, Sample, Group, BioRep, Gene) %>%
+  summarise(Ct = mean(Cp, na.rm = TRUE), .groups = "drop")
+
+# Join housekeeping Ct to every target within the same REPLICATE, then ΔCt
+hk <- tech_mean %>%
+  filter(Gene == "Housekeeping") %>%
+  select(REPLICATE, Ct_HK = Ct)
+
+with_hk <- tech_mean %>%
+  filter(Gene != "Housekeeping") %>%
+  left_join(hk, by = "REPLICATE") %>%
+  mutate(DeltaCt = Ct - Ct_HK)
+
+# For each Sample (76/77/91/92) and Gene, use the Control mean ΔCt as calibrator.
+calibrators <- with_hk %>%
+  filter(Group == "Control") %>%
+  group_by(Sample, Gene) %>%
+  summarise(DeltaCt_cal = mean(DeltaCt, na.rm = TRUE), .groups = "drop")
+
+ddct <- with_hk %>%
+  left_join(calibrators, by = c("Sample","Gene")) %>%
+  mutate(
+    DeltaDeltaCt = DeltaCt - DeltaCt_cal,
+    FoldChange   = 2^(-DeltaDeltaCt)
+  )
+
+
+# Per Sample × Gene × Group: mean ΔΔCt and mean fold-change across bio-reps
+ddct_summary <- ddct %>%
+  group_by(Sample, Gene, Group) %>%
+  summarise(
+    n_bioreps     = dplyr::n(),
+    mean_DeltaCt  = mean(DeltaCt, na.rm = TRUE),
+    mean_DeltaΔCt = mean(DeltaDeltaCt, na.rm = TRUE),
+    mean_FC       = mean(FoldChange, na.rm = TRUE),
+    sd_FC         = sd(FoldChange, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(Gene, Sample, Group)
+
+# Treatment rows with their Control-calibrated values 
+ddct_treatment_only <- ddct_summary %>%
+  filter(Group == "Treatment") %>%
+  select(Sample, Gene, mean_DeltaΔCt, mean_FC, sd_FC, n_bioreps)
