@@ -1,0 +1,77 @@
+plate_all <- read.csv("plate_all.csv")
+
+plate_clean <- plate_all %>%
+  separate(Sample, into = c("Genotype","Diet"), sep = "_", remove = FALSE) %>%
+  mutate(Diet = as.integer(Diet))
+
+plate_filtered <- plate_clean %>% 
+  filter(ABS >= 0.0504)
+
+# Do flies on 20% Sugar diet eat more ?
+library(emmeans)
+
+dat <- plate_filtered %>%
+  filter(!is.na(Conc), !is.na(Diet), !is.na(Genotype)) %>%
+  mutate(
+    Diet_f = factor(Diet, levels = c(5, 20), labels = c("5%", "20%")),
+    Genotype = factor(Genotype)
+  )
+
+m1 <- lmer(Conc ~ Diet_f + (1|Genotype), data = dat)
+
+emm_diet <- emmeans(m1, ~ Diet_f) %>%
+  as_tibble() %>%
+  rename(mean = emmean, se = SE, Diet_f = Diet_f) %>%
+  mutate(
+    lower = mean - qt(0.975, df = df) * se,
+    upper = mean + qt(0.975, df = df) * se
+  )
+
+p <- ggplot(dat, aes(x = Diet_f, y = Conc)) +
+  geom_jitter(width = 0.12, height = 0, alpha = 0.35, size = 1.6) +
+  geom_pointrange(
+    data = emm_diet,
+    aes(x = Diet_f, y = mean, ymin = lower, ymax = upper),
+    inherit.aes = FALSE,
+    fatten = 1.2, linewidth = 0.9
+  ) +
+  labs(
+    x = "Diet",
+    y = "Food intake (dye excreted per well)",
+    title = "High-sugar diet increases feeding in adult female flies"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", margin = margin(b = 6)),
+    panel.grid.minor = element_blank()
+  )
+
+
+pdiff <- with(emm_diet, 100 * (mean[Diet_f == "20%"] - mean[Diet_f == "5%"]) / mean[Diet_f == "5%"])
+p <- p + labs(subtitle = sprintf("20%% sugar vs 5%% sugar: %+0.1f%% change in intake", pdiff))
+
+
+
+# If we had the question, is there geno-specifc dietary choice. This is how we would explore it 
+
+pkc <- plate_filtered %>%
+  filter(Genotype %in% c(1007,1477)) %>%
+  mutate(
+    Genotype = factor(Genotype, levels = c("1007","1477")),
+    Diet     = factor(Diet, levels = c(5,20), labels = c("5%","20%"))
+  )
+
+m_pkc <-lm(log(Conc) ~ Genotype*Diet, data = pkc)
+
+summary(m_pkc)
+
+copb2 <- plate_filtered %>% 
+  filter(Genotype %in% c(1008,1491))%>%
+  mutate(
+    Genotype = factor(Genotype, levels = c("1008","1491")),
+    Diet     = factor(Diet, levels = c(5,20), labels = c("5%","20%"))
+  )
+
+m_copb2 <-lm(log(Conc) ~ Genotype*Diet, data = copb2)
+
+summary(m_copb2)
